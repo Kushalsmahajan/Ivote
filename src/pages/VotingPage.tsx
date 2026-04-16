@@ -1,0 +1,276 @@
+import { useState, useEffect } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
+import { doc, collection, query, where, onSnapshot, getDoc, writeBatch, increment } from 'firebase/firestore';
+import { db, handleFirestoreError, OperationType } from '../firebase';
+import { useAuth } from '../contexts/AuthContext';
+import { CheckCircle2, AlertCircle } from 'lucide-react';
+import { Election, getDerivedElectionStatus } from '../utils/election';
+import { useCurrentTime } from '../hooks/useCurrentTime';
+
+interface Candidate {
+  id: string;
+  name: string;
+  position: string;
+  photoUrl?: string;
+}
+
+export default function VotingPage() {
+  const { electionId } = useParams<{ electionId: string }>();
+  const { user } = useAuth();
+  const navigate = useNavigate();
+  const currentTime = useCurrentTime(10000);
+  
+  const [election, setElection] = useState<Election | null>(null);
+  const [candidates, setCandidates] = useState<Candidate[]>([]);
+  const [hasVoted, setHasVoted] = useState<boolean | null>(null);
+  const [selectedCandidates, setSelectedCandidates] = useState<Record<string, string>>({});
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  
+  // Passcode state
+  const [enteredPasscode, setEnteredPasscode] = useState('');
+  const [isPasscodeVerified, setIsPasscodeVerified] = useState(false);
+  const [passcodeError, setPasscodeError] = useState('');
+
+  useEffect(() => {
+    if (!electionId || !user) return;
+
+    // Fetch Election
+    const fetchElection = async () => {
+      try {
+        const docRef = doc(db, 'elections', electionId);
+        const docSnap = await getDoc(docRef);
+        if (docSnap.exists()) {
+          setElection({ id: docSnap.id, ...docSnap.data() } as Election);
+        } else {
+          setError("Election not found.");
+        }
+      } catch (err) {
+        handleFirestoreError(err, OperationType.GET, `elections/${electionId}`);
+      }
+    };
+    fetchElection();
+
+    // Fetch Candidates
+    const q = query(collection(db, 'candidates'), where('electionId', '==', electionId));
+    const unsubscribeCandidates = onSnapshot(q, (snapshot) => {
+      const cands = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Candidate[];
+      setCandidates(cands);
+    }, (err) => handleFirestoreError(err, OperationType.LIST, 'candidates'));
+
+    // Check if voted
+    const receiptId = `${user.uid}_${electionId}`;
+    const receiptRef = doc(db, 'voter_receipts', receiptId);
+    const unsubscribeReceipt = onSnapshot(receiptRef, (docSnap) => {
+      setHasVoted(docSnap.exists());
+    }, (err) => handleFirestoreError(err, OperationType.GET, `voter_receipts/${receiptId}`));
+
+    return () => {
+      unsubscribeCandidates();
+      unsubscribeReceipt();
+    };
+  }, [electionId, user]);
+
+  const candidatesByPosition = candidates.reduce((acc, candidate) => {
+    if (!acc[candidate.position]) acc[candidate.position] = [];
+    acc[candidate.position].push(candidate);
+    return acc;
+  }, {} as Record<string, Candidate[]>);
+
+  const allPositionsSelected = Object.keys(candidatesByPosition).length > 0 &&
+    Object.keys(candidatesByPosition).every(pos => selectedCandidates[pos]);
+
+  const handleVote = async () => {
+    if (!allPositionsSelected || !electionId || !user) return;
+    setIsSubmitting(true);
+    setError(null);
+
+    try {
+      const batch = writeBatch(db);
+      
+      // 1. Increment candidate vote counts
+      Object.values(selectedCandidates).forEach(candidateId => {
+        const candidateRef = doc(db, 'candidates', candidateId);
+        batch.update(candidateRef, { voteCount: increment(1) });
+      });
+
+      // 2. Create voter receipt
+      const receiptId = `${user.uid}_${electionId}`;
+      const receiptRef = doc(db, 'voter_receipts', receiptId);
+      batch.set(receiptRef, {
+        electionId,
+        userId: user.uid,
+        timestamp: new Date().toISOString()
+      });
+
+      await batch.commit();
+      // hasVoted will automatically update via onSnapshot
+    } catch (err) {
+      console.error(err);
+      setError("Failed to submit vote. Please try again.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleVerifyPasscode = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (election?.passcode && enteredPasscode === election.passcode) {
+      setIsPasscodeVerified(true);
+      setPasscodeError('');
+    } else {
+      setPasscodeError('Incorrect passcode. Please try again.');
+    }
+  };
+
+  if (hasVoted === null || !election) {
+    return <div className="p-8 text-center text-gray-500">Loading election details...</div>;
+  }
+
+  const derivedStatus = getDerivedElectionStatus(election);
+
+  if (derivedStatus !== 'active') {
+    return (
+      <div className="max-w-2xl mx-auto mt-8 bg-yellow-50 border border-yellow-200 rounded-xl p-6 text-center">
+        <AlertCircle className="w-12 h-12 text-yellow-500 mx-auto mb-4" />
+        <h2 className="text-xl font-bold text-yellow-800">Voting is not active</h2>
+        <p className="text-yellow-700 mt-2">This election is currently {derivedStatus}.</p>
+        <button onClick={() => navigate('/')} className="mt-6 px-4 py-2 bg-white border border-yellow-300 rounded-lg text-yellow-800 font-medium hover:bg-yellow-100">
+          Return to Dashboard
+        </button>
+      </div>
+    );
+  }
+
+  if (hasVoted) {
+    return (
+      <div className="max-w-2xl mx-auto mt-8 bg-green-50 border border-green-200 rounded-xl p-8 text-center shadow-sm">
+        <div className="mx-auto flex items-center justify-center h-16 w-16 rounded-full bg-green-100 mb-6">
+          <CheckCircle2 className="h-8 w-8 text-green-600" />
+        </div>
+        <h2 className="text-2xl font-bold text-green-900">Vote Cast Successfully!</h2>
+        <p className="text-green-700 mt-2">Your vote has been securely recorded. You cannot vote again in this election.</p>
+        <button onClick={() => navigate('/')} className="mt-8 px-6 py-2 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 transition">
+          Return to Dashboard
+        </button>
+      </div>
+    );
+  }
+
+  if (election.passcode && !isPasscodeVerified) {
+    return (
+      <div className="max-w-md mx-auto mt-16 bg-white border border-gray-200 rounded-2xl p-8 shadow-sm">
+        <h2 className="text-2xl font-bold text-gray-900 mb-2">Voting Passcode Required</h2>
+        <p className="text-gray-500 mb-6">Please enter the passcode provided by the administrator to access this election.</p>
+        
+        <form onSubmit={handleVerifyPasscode} className="space-y-4">
+          <div>
+            <input
+              type="text"
+              value={enteredPasscode}
+              onChange={(e) => setEnteredPasscode(e.target.value)}
+              placeholder="Enter passcode"
+              className="w-full border-gray-200 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 p-3 border"
+              required
+            />
+          </div>
+          {passcodeError && (
+            <p className="text-red-600 text-sm">{passcodeError}</p>
+          )}
+          <button
+            type="submit"
+            className="w-full py-3 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition-colors"
+          >
+            Verify Passcode
+          </button>
+        </form>
+      </div>
+    );
+  }
+
+  return (
+    <div className="max-w-4xl mx-auto space-y-8">
+      <div className="flex justify-between items-end mb-8">
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900">{election.title}</h1>
+          {election.type === 'student_association' && (
+            <span className="inline-flex items-center gap-1 text-xs uppercase tracking-wider font-bold text-purple-700 bg-purple-100 px-2.5 py-1 rounded-full mt-2">
+              👑 Student Association President Election
+            </span>
+          )}
+          <p className="text-gray-500 mt-2">Please select one candidate for each position.</p>
+        </div>
+        <div className="text-sm font-medium bg-red-50 text-red-700 px-3 py-1.5 rounded-md border border-red-100">
+          Vote cannot be changed
+        </div>
+      </div>
+
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg flex items-center gap-2">
+          <AlertCircle className="w-5 h-5" />
+          {error}
+        </div>
+      )}
+
+      {Object.entries(candidatesByPosition).map(([position, posCandidates]) => (
+        <div key={position} className="mb-10">
+          <h2 className="text-xl font-bold text-gray-800 mb-4 pb-2 border-b border-gray-200">{position}</h2>
+          <div className="grid gap-6 sm:grid-cols-2">
+            {posCandidates.map((candidate) => (
+              <div
+                key={candidate.id}
+                onClick={() => setSelectedCandidates(prev => ({ ...prev, [position]: candidate.id }))}
+                className={`relative p-6 rounded-2xl border bg-white cursor-pointer transition-all duration-200 flex gap-5 ${
+                  selectedCandidates[position] === candidate.id
+                    ? 'border-blue-600 ring-1 ring-blue-600 shadow-sm'
+                    : 'border-gray-200 hover:border-blue-600'
+                }`}
+              >
+                {selectedCandidates[position] === candidate.id && (
+                  <div className="absolute top-4 right-4 text-blue-600">
+                    <CheckCircle2 className="w-6 h-6" />
+                  </div>
+                )}
+                <div className="w-[100px] h-[100px] rounded-xl bg-gray-100 flex items-center justify-center flex-shrink-0 overflow-hidden border border-gray-200">
+                  {candidate.photoUrl ? (
+                    <img src={candidate.photoUrl} alt={candidate.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                  ) : (
+                    <span className="text-3xl font-bold text-gray-400">{candidate.name.charAt(0)}</span>
+                  )}
+                </div>
+                <div className="flex flex-col flex-grow">
+                  <h3 className="font-bold text-lg text-gray-900 mb-1">{candidate.name}</h3>
+                  <p className="text-sm text-gray-500 mb-4">{candidate.position}</p>
+                  
+                  <button
+                    className={`mt-auto w-full py-2.5 rounded-lg text-sm font-semibold transition-colors ${
+                      selectedCandidates[position] === candidate.id
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-gray-50 text-gray-700 border border-gray-200 hover:bg-gray-100'
+                    }`}
+                  >
+                    {selectedCandidates[position] === candidate.id ? 'Selected' : `Vote for ${candidate.name.split(' ')[0]}`}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+
+      <div className="flex justify-end pt-8 border-t border-gray-200 mt-8">
+        <button
+          onClick={handleVote}
+          disabled={!allPositionsSelected || isSubmitting}
+          className={`px-8 py-3 rounded-lg font-semibold transition-all ${
+            !allPositionsSelected || isSubmitting
+              ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
+              : 'bg-blue-600 text-white hover:bg-blue-700 shadow-sm'
+          }`}
+        >
+          {isSubmitting ? 'Submitting...' : 'Confirm Vote'}
+        </button>
+      </div>
+    </div>
+  );
+}

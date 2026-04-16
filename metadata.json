@@ -1,0 +1,6 @@
+{
+  "name": "iVote - Secure College Voting System",
+  "description": "A secure, real-time digital voting platform for college elections with authentication, admin control, and analytics.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}

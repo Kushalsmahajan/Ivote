@@ -1,0 +1,116 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "A user of the voting system (student or admin).",
+      "type": "object",
+      "properties": {
+        "email": {
+          "type": "string",
+          "format": "email"
+        },
+        "role": {
+          "type": "string",
+          "enum": ["student", "admin"]
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": ["email", "role"]
+    },
+    "Election": {
+      "title": "Election",
+      "description": "An election event.",
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["upcoming", "active", "completed"]
+        },
+        "showResults": {
+          "type": "boolean"
+        },
+        "startTime": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "endTime": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["title", "status", "showResults"]
+    },
+    "Candidate": {
+      "title": "Candidate",
+      "description": "A candidate running in an election.",
+      "type": "object",
+      "properties": {
+        "electionId": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "position": {
+          "type": "string"
+        },
+        "photoUrl": {
+          "type": "string"
+        },
+        "voteCount": {
+          "type": "number"
+        }
+      },
+      "required": ["electionId", "name", "position", "voteCount"]
+    },
+    "VoterReceipt": {
+      "title": "Voter Receipt",
+      "description": "A record indicating that a user has voted in a specific election, ensuring they cannot vote again.",
+      "type": "object",
+      "properties": {
+        "electionId": {
+          "type": "string"
+        },
+        "userId": {
+          "type": "string"
+        },
+        "timestamp": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["electionId", "userId", "timestamp"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": {
+        "$ref": "#/entities/User"
+      },
+      "description": "User profiles and roles."
+    },
+    "/elections/{electionId}": {
+      "schema": {
+        "$ref": "#/entities/Election"
+      },
+      "description": "Election configurations."
+    },
+    "/candidates/{candidateId}": {
+      "schema": {
+        "$ref": "#/entities/Candidate"
+      },
+      "description": "Candidates for elections."
+    },
+    "/voter_receipts/{receiptId}": {
+      "schema": {
+        "$ref": "#/entities/VoterReceipt"
+      },
+      "description": "Audit log of who voted in which election."
+    }
+  }
+}

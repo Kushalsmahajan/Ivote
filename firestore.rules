@@ -1,0 +1,63 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && (
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+        (request.auth.token.email == "kushalmmahajan@gmail.com" && request.auth.token.email_verified == true)
+      );
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /users/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      // Users can create their own profile as 'student'
+      allow create: if isOwner(userId) && 
+                    request.resource.data.keys().hasAll(['email', 'role']) &&
+                    request.resource.data.role == 'student';
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    match /elections/{electionId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    match /candidates/{candidateId} {
+      allow read: if isAuthenticated();
+      allow create, delete: if isAdmin();
+      allow update: if isAdmin() || (
+        isAuthenticated() &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['voteCount']) &&
+        request.resource.data.voteCount == resource.data.voteCount + 1 &&
+        !exists(/databases/$(database)/documents/voter_receipts/$(request.auth.uid + '_' + resource.data.electionId)) &&
+        getAfter(/databases/$(database)/documents/voter_receipts/$(request.auth.uid + '_' + resource.data.electionId)) != null
+      );
+    }
+
+    match /voter_receipts/{receiptId} {
+      allow read: if isAdmin() || (isAuthenticated() && receiptId.matches('^' + request.auth.uid + '_.*'));
+      allow create: if isAuthenticated() &&
+        receiptId == request.auth.uid + '_' + request.resource.data.electionId &&
+        request.resource.data.userId == request.auth.uid &&
+        request.resource.data.keys().hasAll(['electionId', 'userId', 'timestamp']);
+      allow update, delete: if false; // Receipts are immutable
+    }
+  }
+}
