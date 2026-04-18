@@ -3,7 +3,7 @@ import { collection, query, onSnapshot, orderBy } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { Link, useNavigate } from 'react-router-dom';
 import { format } from 'date-fns';
-import { Calendar, ChevronRight, BarChart2, User as UserIcon, Edit2, Check, X } from 'lucide-react';
+import { Calendar, ChevronRight, BarChart2, User as UserIcon, Edit2, Check, X, Share2 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { Election, getDerivedElectionStatus } from '../utils/election';
 import { useCurrentTime } from '../hooks/useCurrentTime';
@@ -58,7 +58,25 @@ export default function Dashboard() {
 
   const [searchRoomId, setSearchRoomId] = useState('');
   const [searchError, setSearchError] = useState('');
+  const [copiedElectionId, setCopiedElectionId] = useState<string | null>(null);
   const navigate = useNavigate();
+
+  const handleShare = (electionId: string, type: 'vote' | 'results', e: React.MouseEvent) => {
+    e.preventDefault(); // In case it's inside a link
+    e.stopPropagation();
+    const url = `${window.location.origin}/${type === 'results' ? 'results' : 'vote'}/${electionId}`;
+    
+    if (navigator.share) {
+      navigator.share({
+        title: 'College Election',
+        url: url
+      }).catch((error) => console.log('Error sharing', error));
+    } else {
+      navigator.clipboard.writeText(url);
+      setCopiedElectionId(electionId);
+      setTimeout(() => setCopiedElectionId(null), 2000);
+    }
+  };
 
   const handleJoinRoom = (e: React.FormEvent) => {
     e.preventDefault();
@@ -301,6 +319,14 @@ export default function Dashboard() {
                       Voting not started
                     </button>
                   )}
+
+                  <button 
+                    onClick={(e) => handleShare(election.id, election.derivedStatus === 'completed' || election.showResults ? 'results' : 'vote', e)} 
+                    className="p-2.5 text-blue-600 hover:bg-blue-50 border border-transparent rounded-lg transition-colors flex items-center justify-center gap-1"
+                    title="Share Election Link"
+                  >
+                    {copiedElectionId === election.id ? <Check className="w-4 h-4 text-green-600" /> : <Share2 className="w-4 h-4" />}
+                  </button>
                 </div>
               </div>
             ))}

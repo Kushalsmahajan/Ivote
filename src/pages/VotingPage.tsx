@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { doc, collection, query, where, onSnapshot, getDoc, writeBatch, increment } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
-import { CheckCircle2, AlertCircle, Award, Download, X } from 'lucide-react';
+import { CheckCircle2, AlertCircle, Award, Download, X, Info, Share2, Check } from 'lucide-react';
 import { Election, getDerivedElectionStatus } from '../utils/election';
 import { useCurrentTime } from '../hooks/useCurrentTime';
 import { toPng } from 'html-to-image';
@@ -43,6 +43,39 @@ export default function VotingPage() {
   const [enteredPasscode, setEnteredPasscode] = useState('');
   const [isPasscodeVerified, setIsPasscodeVerified] = useState(false);
   const [passcodeError, setPasscodeError] = useState('');
+  const [failedAttempts, setFailedAttempts] = useState(0);
+  const [isLocked, setIsLocked] = useState(false);
+  const [lockTimeLeft, setLockTimeLeft] = useState(0);
+
+  const [copiedLink, setCopiedLink] = useState(false);
+
+  const handleShare = () => {
+    const url = window.location.href;
+    if (navigator.share) {
+      navigator.share({
+        title: election?.title || 'College Election',
+        url: url
+      }).catch((error) => console.log('Error sharing', error));
+    } else {
+      navigator.clipboard.writeText(url);
+      setCopiedLink(true);
+      setTimeout(() => setCopiedLink(false), 2000);
+    }
+  };
+
+  useEffect(() => {
+    let timer: NodeJS.Timeout;
+    if (isLocked && lockTimeLeft > 0) {
+      timer = setTimeout(() => {
+        setLockTimeLeft(prev => prev - 1);
+      }, 1000);
+    } else if (isLocked && lockTimeLeft === 0) {
+      setIsLocked(false);
+      setFailedAttempts(0);
+      setPasscodeError('');
+    }
+    return () => clearTimeout(timer);
+  }, [isLocked, lockTimeLeft]);
 
   // Badge state
   const badgeRef = useRef<HTMLDivElement>(null);
@@ -147,11 +180,22 @@ export default function VotingPage() {
 
   const handleVerifyPasscode = (e: React.FormEvent) => {
     e.preventDefault();
+    if (isLocked) return;
+
     if (election?.passcode && enteredPasscode === election.passcode) {
       setIsPasscodeVerified(true);
       setPasscodeError('');
+      setFailedAttempts(0);
     } else {
-      setPasscodeError('Incorrect passcode. Please try again.');
+      const newAttempts = failedAttempts + 1;
+      setFailedAttempts(newAttempts);
+      if (newAttempts >= 3) {
+        setIsLocked(true);
+        setLockTimeLeft(5);
+        setPasscodeError(`Too many incorrect attempts. Please wait 5 seconds.`);
+      } else {
+        setPasscodeError(`Incorrect passcode. You have ${3 - newAttempts} attempt${3 - newAttempts === 1 ? '' : 's'} left.`);
+      }
     }
   };
 
@@ -253,23 +297,37 @@ export default function VotingPage() {
         
         <form onSubmit={handleVerifyPasscode} className="space-y-4">
           <div>
-            <input
-              type="text"
-              value={enteredPasscode}
-              onChange={(e) => setEnteredPasscode(e.target.value)}
-              placeholder="Enter passcode"
-              className="w-full border-gray-200 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 p-3 border"
-              required
-            />
+            <div className="relative">
+              <input
+                type="password"
+                value={enteredPasscode}
+                onChange={(e) => setEnteredPasscode(e.target.value)}
+                placeholder="Enter passcode"
+                className={`w-full border-gray-200 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 p-3 border font-mono tracking-widest ${isLocked ? 'bg-gray-100 cursor-not-allowed text-gray-400' : ''}`}
+                required
+                disabled={isLocked}
+              />
+              <div className="absolute right-3 top-1/2 -translate-y-1/2 text-blue-500" title="Passcodes are case-sensitive">
+                <Info className="w-5 h-5" />
+              </div>
+            </div>
+            <p className="mt-2 text-xs text-gray-500 flex items-start gap-1">
+              Hint: Passcodes are case-sensitive (e.g., SECRET123, 12345). Contact your administrator if you haven't received one.
+            </p>
           </div>
           {passcodeError && (
-            <p className="text-red-600 text-sm">{passcodeError}</p>
+            <p className={`text-sm ${isLocked ? 'text-orange-600 font-semibold' : 'text-red-600'}`}>{passcodeError}</p>
           )}
           <button
             type="submit"
-            className="w-full py-3 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition-colors"
+            disabled={isLocked}
+            className={`w-full py-3 text-white rounded-lg font-semibold transition-colors flex justify-center items-center gap-2 ${isLocked ? 'bg-gray-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'}`}
           >
-            Verify Passcode
+            {isLocked ? (
+              <>Locked out ({lockTimeLeft}s)</>
+            ) : (
+              'Verify Passcode'
+            )}
           </button>
         </form>
       </div>
@@ -278,7 +336,7 @@ export default function VotingPage() {
 
   return (
     <div className="max-w-4xl mx-auto space-y-8">
-      <div className="flex justify-between items-end mb-8">
+      <div className="flex justify-between items-end mb-8 border-b border-gray-100 pb-6">
         <div>
           <h1 className="text-3xl font-bold text-gray-900">{election.title}</h1>
           {election.type === 'student_association' && (
@@ -288,8 +346,17 @@ export default function VotingPage() {
           )}
           <p className="text-gray-500 mt-2">Please select one candidate for each position.</p>
         </div>
-        <div className="text-sm font-medium bg-red-50 text-red-700 px-3 py-1.5 rounded-md border border-red-100">
-          Vote cannot be changed
+        <div className="flex flex-col items-end gap-3">
+          <div className="text-sm font-medium bg-red-50 text-red-700 px-3 py-1.5 rounded-md border border-red-100">
+            Vote cannot be changed
+          </div>
+          <button 
+            onClick={handleShare}
+            className="flex items-center gap-2 px-3 py-1.5 bg-gray-50 hover:bg-gray-100 text-gray-700 rounded-lg border border-gray-200 transition-colors font-medium text-sm"
+          >
+            {copiedLink ? <Check className="w-4 h-4 text-green-600" /> : <Share2 className="w-4 h-4" />}
+            {copiedLink ? 'Copied' : 'Share'}
+          </button>
         </div>
       </div>
 

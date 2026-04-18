@@ -2,12 +2,13 @@ import { useState, useEffect } from 'react';
 import { collection, query, onSnapshot, orderBy, addDoc, updateDoc, deleteDoc, doc, where, getDocs } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, storage, handleFirestoreError, OperationType } from '../firebase';
-import { Plus, Trash2, Edit2, Eye, EyeOff, Download, Users, BarChart2, Activity, Sparkles, X, Upload, Bell, Check } from 'lucide-react';
+import { Plus, Trash2, Edit2, Eye, EyeOff, Download, Users, BarChart2, Activity, Sparkles, X, Upload, Bell, Check, ChevronDown, ChevronRight, Share2 } from 'lucide-react';
 import { format } from 'date-fns';
 import { Election, getDerivedElectionStatus } from '../utils/election';
 import { useCurrentTime } from '../hooks/useCurrentTime';
 import { GoogleGenAI } from '@google/genai';
 import Markdown from 'react-markdown';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
@@ -45,11 +46,46 @@ export default function AdminDashboard() {
   const [totalStudents, setTotalStudents] = useState<number>(0);
   const [totalVotes, setTotalVotes] = useState<number>(0); // specifically for selected election
 
+  // Share state
+  const [copiedElectionId, setCopiedElectionId] = useState<string | null>(null);
+
+  const handleShare = (electionId: string, type: 'vote' | 'results', e: React.MouseEvent) => {
+    e.stopPropagation();
+    const url = `${window.location.origin}/${type === 'results' ? 'results' : 'vote'}/${electionId}`;
+    
+    if (navigator.share) {
+      navigator.share({
+        title: 'College Election',
+        url: url
+      }).catch((error) => console.log('Error sharing', error));
+    } else {
+      navigator.clipboard.writeText(url);
+      setCopiedElectionId(electionId);
+      setTimeout(() => setCopiedElectionId(null), 2000);
+    }
+  };
+
+  // Passcode visibility
+  const [visiblePasscodes, setVisiblePasscodes] = useState<Record<string, boolean>>({});
+
+  const togglePasscodeVisibility = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setVisiblePasscodes(prev => ({...prev, [id]: !prev[id]}));
+  };
+
+  // Election grouping state
+  const [expandedSections, setExpandedSections] = useState({ active: true, upcoming: true, completed: false });
+  const [electionFilter, setElectionFilter] = useState<'all' | 'general' | 'student_association'>('all');
+  
+  const toggleSection = (section: 'active' | 'upcoming' | 'completed') => {
+    setExpandedSections(prev => ({ ...prev, [section]: !prev[section] }));
+  };
+
   // Global Analytics Stats
   const [globalTotalVotes, setGlobalTotalVotes] = useState<number>(0);
   const [uniqueVoters, setUniqueVoters] = useState<number>(0);
 
-  const [activeTab, setActiveTab] = useState<'manage' | 'monitor'>('manage');
+  const [activeTab, setActiveTab] = useState<'manage' | 'monitor' | 'analytics'>('manage');
 
   // Notifications
   const [isSendingEmail, setIsSendingEmail] = useState<string | null>(null);
@@ -425,7 +461,7 @@ export default function AdminDashboard() {
               </div>
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-1.5">Voting Passcode (Optional)</label>
-                <input type="text" value={newElection.passcode} onChange={e => setNewElection({...newElection, passcode: e.target.value})} placeholder="Leave blank for no passcode" className="w-full border-gray-200 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm p-2.5 border" />
+                <input type="password" value={newElection.passcode} onChange={e => setNewElection({...newElection, passcode: e.target.value})} placeholder="Leave blank for no passcode" className="w-full border-gray-200 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm p-2.5 border font-mono" />
               </div>
             </div>
             <div className="flex justify-end gap-3 pt-4">
@@ -438,45 +474,106 @@ export default function AdminDashboard() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Elections List */}
-        <div className="lg:col-span-1 space-y-4">
-          <h2 className="text-lg font-bold text-gray-900">Elections</h2>
-          {electionsWithStatus.map(election => (
-            <div 
-              key={election.id} 
-              onClick={() => setSelectedElection(election.id)}
-              className={`p-5 rounded-2xl border cursor-pointer transition-colors ${selectedElection === election.id ? 'border-blue-600 bg-blue-50/50' : 'border-gray-200 bg-white hover:border-blue-400'}`}
+        <div className="lg:col-span-1 space-y-6">
+          <div className="flex justify-between items-center mb-2">
+            <h2 className="text-lg font-bold text-gray-900">Elections</h2>
+            <select 
+              value={electionFilter}
+              onChange={(e) => setElectionFilter(e.target.value as any)}
+              className="px-3 py-1.5 bg-white border border-gray-200 rounded-lg text-xs font-medium text-gray-700 shadow-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
             >
-              <div className="flex justify-between items-start mb-3">
-                <div>
-                  <h3 className="font-bold text-gray-900">{election.title}</h3>
-                  {election.type === 'student_association' && (
-                    <span className="inline-flex items-center gap-1 text-[10px] uppercase tracking-wider font-bold text-purple-700 bg-purple-100 px-2 py-0.5 rounded-full mt-1 block">
-                      👑 President Voting
-                    </span>
-                  )}
-                  {election.roomId && (
-                    <span className="inline-block mt-1 font-mono text-xs font-semibold bg-gray-100 text-gray-700 px-2 py-0.5 rounded-md border border-gray-200">
-                      Room ID: {election.roomId}
-                    </span>
-                  )}
-                </div>
-                <span className={`text-xs px-2.5 py-0.5 rounded-full font-semibold ${election.derivedStatus === 'active' ? 'bg-green-100 text-green-800' : election.derivedStatus === 'upcoming' ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-800'}`}>{election.derivedStatus}</span>
-              </div>
-              <div className="text-xs text-gray-500 space-y-1.5 mb-5">
-                <p>Starts: {election.startTime ? format(new Date(election.startTime), 'PP p') : 'N/A'}</p>
-                <p>Ends: {election.endTime ? format(new Date(election.endTime), 'PP p') : 'N/A'}</p>
-              </div>
-              
-              <div className="flex flex-wrap gap-2 pt-4 border-t border-gray-100">
-                <button onClick={(e) => { e.stopPropagation(); handleToggleResults(election.id, election.showResults); }} className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors" title="Toggle Results Visibility">
-                  {election.showResults ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
+              <option value="all">All Types</option>
+              <option value="general">General</option>
+              <option value="student_association">Student Association</option>
+            </select>
+          </div>
+          
+          {(['active', 'upcoming', 'completed'] as const).map(section => {
+            const sectionElections = electionsWithStatus.filter(e => {
+              if (e.derivedStatus !== section) return false;
+              if (electionFilter !== 'all' && e.type !== electionFilter) return false;
+              return true;
+            });
+            if (sectionElections.length === 0) return null;
+
+            return (
+              <div key={section} className="space-y-3">
+                <button 
+                  onClick={() => toggleSection(section)}
+                  className="flex items-center justify-between w-full p-3 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors"
+                >
+                  <h3 className="font-semibold text-gray-800 capitalize flex items-center gap-2">
+                    {section} <span className="bg-white text-gray-500 text-xs px-2 py-0.5 rounded-full border border-gray-200">{sectionElections.length}</span>
+                  </h3>
+                  {expandedSections[section] ? <ChevronDown className="w-4 h-4 text-gray-500" /> : <ChevronRight className="w-4 h-4 text-gray-500" />}
                 </button>
-                <button onClick={(e) => { e.stopPropagation(); handleDeleteElection(election.id); }} className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors ml-auto" title="Delete Election">
-                  <Trash2 className="w-4 h-4" />
-                </button>
+                
+                {expandedSections[section] && (
+                  <div className="space-y-4">
+                    {sectionElections.map(election => (
+                      <div 
+                        key={election.id} 
+                        onClick={() => setSelectedElection(election.id)}
+                        className={`p-5 rounded-2xl border cursor-pointer transition-colors shadow-sm ${selectedElection === election.id ? 'border-blue-600 bg-blue-50/50 ring-1 ring-blue-600' : 'border-gray-200 bg-white hover:border-blue-300'}`}
+                      >
+                        <div className="flex justify-between items-start mb-3">
+                          <div>
+                            <h3 className="font-bold text-gray-900">{election.title}</h3>
+                            {election.type === 'student_association' && (
+                              <span className="inline-flex items-center gap-1 text-[10px] uppercase tracking-wider font-bold text-purple-700 bg-purple-100 px-2 py-0.5 rounded-full mt-1 block">
+                                👑 President Voting
+                              </span>
+                            )}
+                            {election.roomId && (
+                              <span className="inline-block mt-1 font-mono text-xs font-semibold bg-gray-100 text-gray-700 px-2 py-0.5 rounded-md border border-gray-200">
+                                Room ID: {election.roomId}
+                              </span>
+                            )}
+                            {election.passcode && (
+                              <div className="flex items-center gap-1.5 mt-1">
+                                <span className="inline-block font-mono text-xs font-semibold bg-gray-100 text-gray-700 px-2 py-0.5 rounded-md border border-gray-200">
+                                  Passcode: {visiblePasscodes[election.id] ? election.passcode : '••••••••'}
+                                </span>
+                                <button 
+                                  onClick={(e) => togglePasscodeVisibility(election.id, e)}
+                                  className="text-gray-500 hover:bg-gray-200 p-1 rounded transition-colors"
+                                  title={visiblePasscodes[election.id] ? "Hide Passcode" : "Show Passcode"}
+                                >
+                                  {visiblePasscodes[election.id] ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                        <div className="text-xs text-gray-500 space-y-1.5 mb-5">
+                          <p>Starts: {election.startTime ? format(new Date(election.startTime), 'PP p') : 'N/A'}</p>
+                          <p>Ends: {election.endTime ? format(new Date(election.endTime), 'PP p') : 'N/A'}</p>
+                        </div>
+                        
+                        <div className="flex flex-wrap gap-2 pt-4 border-t border-gray-100">
+                          <button onClick={(e) => { e.stopPropagation(); handleToggleResults(election.id, election.showResults); }} className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors" title="Toggle Results Visibility">
+                            {election.showResults ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
+                          </button>
+                          
+                          <button 
+                            onClick={(e) => handleShare(election.id, 'vote', e)} 
+                            className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors flex items-center gap-1" 
+                            title="Share Voting Page Link"
+                          >
+                            {copiedElectionId === election.id ? <Check className="w-4 h-4 text-green-600" /> : <Share2 className="w-4 h-4" />}
+                          </button>
+                          
+                          <button onClick={(e) => { e.stopPropagation(); handleDeleteElection(election.id); }} className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors ml-auto" title="Delete Election">
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
 
         {/* Candidates Management & Stats */}
@@ -484,25 +581,38 @@ export default function AdminDashboard() {
           {selectedElection ? (
             <div className="space-y-6">
               {/* Turnout Stats */}
-              <div className="grid grid-cols-2 gap-6">
-                <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 flex items-center gap-4">
-                  <div className="p-3 bg-blue-50 text-blue-600 rounded-xl">
-                    <Users className="w-6 h-6" />
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+                <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 flex flex-col justify-center">
+                  <div className="flex items-center gap-3 mb-2">
+                     <div className="p-2 bg-blue-50 text-blue-600 rounded-lg">
+                      <Users className="w-5 h-5" />
+                    </div>
+                    <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Unique Voters</div>
                   </div>
-                  <div>
-                    <div className="text-sm font-semibold text-gray-500 uppercase tracking-wider">Total Ballots Cast</div>
-                    <div className="text-2xl font-bold text-gray-900">{totalVotes}</div>
+                  <div className="text-3xl font-bold text-gray-900">{totalVotes}</div>
+                </div>
+
+                <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 flex flex-col justify-center">
+                  <div className="flex items-center gap-3 mb-2">
+                    <div className="p-2 bg-green-50 text-green-600 rounded-lg">
+                      <Check className="w-5 h-5" />
+                    </div>
+                    <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Total Ballots Cast</div>
+                  </div>
+                  <div className="text-3xl font-bold text-gray-900">
+                    {candidates.reduce((sum, c) => sum + c.voteCount, 0)}
                   </div>
                 </div>
-                <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 flex items-center gap-4">
-                  <div className="p-3 bg-green-50 text-green-600 rounded-xl">
-                    <BarChart2 className="w-6 h-6" />
-                  </div>
-                  <div>
-                    <div className="text-sm font-semibold text-gray-500 uppercase tracking-wider">Voter Turnout</div>
-                    <div className="text-2xl font-bold text-gray-900">
-                      {totalStudents > 0 ? ((totalVotes / totalStudents) * 100).toFixed(1) : 0}%
+
+                <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 flex flex-col justify-center">
+                  <div className="flex items-center gap-3 mb-2">
+                    <div className="p-2 bg-purple-50 text-purple-600 rounded-lg">
+                      <Activity className="w-5 h-5" />
                     </div>
+                    <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Voter Turnout</div>
+                  </div>
+                  <div className="text-3xl font-bold text-gray-900">
+                    {totalStudents > 0 ? ((totalVotes / totalStudents) * 100).toFixed(1) : 0}%
                   </div>
                 </div>
               </div>
@@ -520,6 +630,12 @@ export default function AdminDashboard() {
                     className={`pb-3 font-semibold text-sm transition-colors flex items-center gap-2 ${activeTab === 'monitor' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
                   >
                     <Activity className="w-4 h-4" /> Live Monitor
+                  </button>
+                  <button 
+                    onClick={() => setActiveTab('analytics')} 
+                    className={`pb-3 font-semibold text-sm transition-colors flex items-center gap-2 ${activeTab === 'analytics' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
+                  >
+                    <BarChart2 className="w-4 h-4" /> Analytics
                   </button>
                 </div>
 
@@ -738,6 +854,67 @@ export default function AdminDashboard() {
                       </table>
                     </div>
                   </>
+                ) : activeTab === 'analytics' ? (
+                  <div className="space-y-8">
+                    <div className="flex items-center justify-between border-b border-gray-100 pb-4">
+                      <div>
+                        <h2 className="text-2xl font-bold text-gray-900 border-l-4 border-blue-600 pl-3">
+                          Analytics Dashboard
+                        </h2>
+                        <p className="text-sm text-gray-500 mt-1 pl-4">Review voting trends and performance</p>
+                      </div>
+                    </div>
+
+                    <div className="bg-gray-50 border border-gray-200 rounded-2xl p-6">
+                      <h3 className="text-lg font-bold text-gray-900 mb-6 flex items-center gap-2">
+                        <BarChart2 className="w-5 h-5 text-blue-600" />
+                        Votes per Candidate
+                      </h3>
+                      {candidates.length === 0 ? (
+                        <div className="text-center py-12 text-gray-500">
+                          Not enough data to display. Please add candidates to view analytics.
+                        </div>
+                      ) : (
+                        <div className="h-[400px]">
+                          <ResponsiveContainer width="100%" height="100%">
+                            <BarChart
+                              data={candidates.map(c => ({ name: c.name, votes: c.voteCount, position: c.position }))}
+                              margin={{ top: 20, right: 30, left: 20, bottom: 60 }}
+                            >
+                              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E7EB" />
+                              <XAxis 
+                                dataKey="name" 
+                                axisLine={false}
+                                tickLine={false}
+                                interval={0}
+                                angle={-45}
+                                textAnchor="end"
+                                height={80}
+                                tick={{ fill: '#374151', fontSize: 12, fontWeight: 500 }}
+                              />
+                              <YAxis 
+                                allowDecimals={false}
+                                axisLine={false}
+                                tickLine={false}
+                                tick={{ fill: '#6B7280', fontSize: 12 }}
+                              />
+                              <Tooltip
+                                cursor={{ fill: '#F3F4F6' }}
+                                contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)' }}
+                                formatter={(value: number) => [`${value} Votes`, 'Results']}
+                              />
+                              <Bar 
+                                dataKey="votes" 
+                                fill="#2563EB" 
+                                radius={[4, 4, 0, 0]}
+                                maxBarSize={60}
+                              />
+                            </BarChart>
+                          </ResponsiveContainer>
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 ) : (
                   <div className="space-y-8">
                     <div className="flex items-center justify-between border-b border-gray-100 pb-4">

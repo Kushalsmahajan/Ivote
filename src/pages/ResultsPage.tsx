@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { doc, collection, query, where, onSnapshot, getDoc } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
-import { Trophy, ArrowLeft, AlertCircle, FileBadge, Download, X } from 'lucide-react';
+import { Trophy, ArrowLeft, AlertCircle, FileBadge, Download, X, Share2, Check } from 'lucide-react';
 import { Election, getDerivedElectionStatus } from '../utils/election';
 import { useCurrentTime } from '../hooks/useCurrentTime';
 import confetti from 'canvas-confetti';
@@ -30,6 +30,21 @@ export default function ResultsPage() {
   const [showCertificate, setShowCertificate] = useState(false);
   const [certificateData, setCertificateData] = useState<{name: string, position: string, voteCount: number} | null>(null);
   const certificateRef = useRef<HTMLDivElement>(null);
+  const [copiedLink, setCopiedLink] = useState(false);
+
+  const handleShare = () => {
+    const url = window.location.href;
+    if (navigator.share) {
+      navigator.share({
+        title: election?.title ? `${election.title} Results` : 'Election Results',
+        url: url
+      }).catch((error) => console.log('Error sharing', error));
+    } else {
+      navigator.clipboard.writeText(url);
+      setCopiedLink(true);
+      setTimeout(() => setCopiedLink(false), 2000);
+    }
+  };
 
   const handleDownloadCertificate = async () => {
     if (!certificateRef.current) return;
@@ -137,11 +152,18 @@ export default function ResultsPage() {
       </button>
 
       <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-10">
-        <div className="flex justify-between items-end mb-10 pb-6 border-b border-gray-100">
+        <div className="flex justify-between items-start sm:items-end flex-col sm:flex-row gap-4 mb-10 pb-6 border-b border-gray-100">
           <div>
             <h1 className="text-3xl font-bold text-gray-900 mb-2">{election.title}</h1>
             <p className="text-gray-500">Live Election Results</p>
           </div>
+          <button 
+            onClick={handleShare}
+            className="flex items-center gap-2 px-4 py-2 bg-gray-50 hover:bg-gray-100 text-gray-700 rounded-lg border border-gray-200 transition-colors font-medium text-sm"
+          >
+            {copiedLink ? <Check className="w-4 h-4 text-green-600" /> : <Share2 className="w-4 h-4" />}
+            {copiedLink ? 'Copied Link' : 'Share Results'}
+          </button>
         </div>
 
         <motion.div variants={containerVariants} initial="hidden" animate="show">
