@@ -600,9 +600,41 @@ export default function AdminDashboard() {
                             <label className="block text-xs font-semibold text-gray-700 mb-1.5 uppercase tracking-wider">Roll No</label>
                             <input type="text" value={newCandidate.rollNo} onChange={e => setNewCandidate({...newCandidate, rollNo: e.target.value})} className="w-full border-gray-200 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm p-2.5 border" />
                           </div>
-                          <div>
+                          <div className="col-span-2 sm:col-span-1">
                             <label className="block text-xs font-semibold text-gray-700 mb-1.5 uppercase tracking-wider">Position</label>
-                            <input required type="text" value={newCandidate.position} onChange={e => setNewCandidate({...newCandidate, position: e.target.value})} className="w-full border-gray-200 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm p-2.5 border" />
+                            <div className="flex flex-col border border-gray-200 rounded-xl overflow-hidden bg-white shadow-sm">
+                              {elections.find(e => e.id === selectedElection)?.type === 'student_association' ? (
+                                <label className={`flex justify-between items-center p-3 cursor-pointer transition-colors ${newCandidate.position === 'President' ? 'bg-blue-50' : 'hover:bg-gray-50'}`}>
+                                  <span className="text-gray-900 font-medium text-sm">President</span>
+                                  <input type="radio" name="position" value="President" checked={newCandidate.position === 'President'} onChange={e => setNewCandidate({...newCandidate, position: e.target.value})} className="w-4 h-4 text-blue-600 focus:ring-blue-500 border-gray-300" />
+                                </label>
+                              ) : (
+                                <>
+                                  <label className={`flex justify-between items-center p-3 cursor-pointer transition-colors border-b border-gray-200 ${newCandidate.position === 'Class Rep (CR)' ? 'bg-blue-50' : 'hover:bg-gray-50'}`}>
+                                    <span className="text-gray-900 font-medium text-sm">Class Rep (CR)</span>
+                                    <input type="radio" name="position" value="Class Rep (CR)" checked={newCandidate.position === 'Class Rep (CR)'} onChange={e => setNewCandidate({...newCandidate, position: e.target.value})} className="w-4 h-4 text-blue-600 focus:ring-blue-500 border-gray-300" />
+                                  </label>
+                                  <label className={`flex justify-between items-center p-3 cursor-pointer transition-colors border-b border-gray-200 ${newCandidate.position === 'Ladies Rep (LR)' ? 'bg-blue-50' : 'hover:bg-gray-50'}`}>
+                                    <span className="text-gray-900 font-medium text-sm">Ladies Rep (LR)</span>
+                                    <input type="radio" name="position" value="Ladies Rep (LR)" checked={newCandidate.position === 'Ladies Rep (LR)'} onChange={e => setNewCandidate({...newCandidate, position: e.target.value})} className="w-4 h-4 text-blue-600 focus:ring-blue-500 border-gray-300" />
+                                  </label>
+                                  <label className={`flex justify-between items-center p-3 cursor-pointer transition-colors ${!['Class Rep (CR)', 'Ladies Rep (LR)'].includes(newCandidate.position) && newCandidate.position !== '' ? 'bg-blue-50' : 'hover:bg-gray-50'}`}>
+                                    <span className="text-gray-900 font-medium text-sm">Other...</span>
+                                    <input type="radio" name="position" value="Other" checked={!['Class Rep (CR)', 'Ladies Rep (LR)'].includes(newCandidate.position) && newCandidate.position !== ''} onChange={() => setNewCandidate({...newCandidate, position: 'President'})} className="w-4 h-4 text-blue-600 focus:ring-blue-500 border-gray-300" />
+                                  </label>
+                                </>
+                              )}
+                            </div>
+                            {!['Class Rep (CR)', 'Ladies Rep (LR)', 'President', ''].includes(newCandidate.position) && (
+                              <input 
+                                required 
+                                type="text" 
+                                value={newCandidate.position} 
+                                onChange={e => setNewCandidate({...newCandidate, position: e.target.value})} 
+                                placeholder="Enter custom position"
+                                className="w-full border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm p-2.5 border mt-2" 
+                              />
+                            )}
                           </div>
                           <div>
                             <label className="block text-xs font-semibold text-gray-700 mb-1.5 uppercase tracking-wider">Photo</label>

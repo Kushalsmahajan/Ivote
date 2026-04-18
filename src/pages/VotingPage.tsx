@@ -1,11 +1,12 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { doc, collection, query, where, onSnapshot, getDoc, writeBatch, increment } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
-import { CheckCircle2, AlertCircle } from 'lucide-react';
+import { CheckCircle2, AlertCircle, Award, Download, X } from 'lucide-react';
 import { Election, getDerivedElectionStatus } from '../utils/election';
 import { useCurrentTime } from '../hooks/useCurrentTime';
+import { toPng } from 'html-to-image';
 
 interface Candidate {
   id: string;
@@ -13,6 +14,17 @@ interface Candidate {
   position: string;
   photoUrl?: string;
 }
+
+const AwardsPattern = () => (
+  <svg width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <pattern id="star" x="0" y="0" width="40" height="40" patternUnits="userSpaceOnUse">
+        <path d="M20 5l4.5 13.5H38l-11 8 4.5 13.5L20 32l-11 8 4.5-13.5-11-8h13.5z" fill="currentColor"/>
+      </pattern>
+    </defs>
+    <rect width="100%" height="100%" fill="url(#star)" />
+  </svg>
+);
 
 export default function VotingPage() {
   const { electionId } = useParams<{ electionId: string }>();
@@ -31,6 +43,26 @@ export default function VotingPage() {
   const [enteredPasscode, setEnteredPasscode] = useState('');
   const [isPasscodeVerified, setIsPasscodeVerified] = useState(false);
   const [passcodeError, setPasscodeError] = useState('');
+
+  // Badge state
+  const badgeRef = useRef<HTMLDivElement>(null);
+  const [showBadge, setShowBadge] = useState(false);
+
+  const handleDownloadBadge = async () => {
+    if (!badgeRef.current) return;
+    try {
+      const dataUrl = await toPng(badgeRef.current, { cacheBust: true, pixelRatio: 2 });
+      const link = document.createElement('a');
+      link.href = dataUrl;
+      link.download = `I_Voted_Badge_${election?.title?.replace(/\s+/g, '_')}.png`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (err) {
+      console.error('Failed to generate badge', err);
+      alert('Failed to generate badge.');
+    }
+  };
 
   useEffect(() => {
     if (!electionId || !user) return;
@@ -144,15 +176,71 @@ export default function VotingPage() {
 
   if (hasVoted) {
     return (
-      <div className="max-w-2xl mx-auto mt-8 bg-green-50 border border-green-200 rounded-xl p-8 text-center shadow-sm">
-        <div className="mx-auto flex items-center justify-center h-16 w-16 rounded-full bg-green-100 mb-6">
-          <CheckCircle2 className="h-8 w-8 text-green-600" />
+      <div className="max-w-2xl mx-auto mt-8 space-y-6">
+        <div className="bg-green-50 border border-green-200 rounded-xl p-8 text-center shadow-sm">
+          <div className="mx-auto flex items-center justify-center h-16 w-16 rounded-full bg-green-100 mb-6">
+            <CheckCircle2 className="h-8 w-8 text-green-600" />
+          </div>
+          <h2 className="text-2xl font-bold text-green-900">Vote Cast Successfully!</h2>
+          <p className="text-green-700 mt-2">Your vote has been securely recorded. You cannot vote again in this election.</p>
+          
+          <div className="mt-8 flex flex-col sm:flex-row justify-center gap-3">
+            <button onClick={() => navigate('/')} className="px-6 py-2.5 bg-white border border-green-300 text-green-800 rounded-lg font-medium hover:bg-green-100 transition shadow-sm">
+              Return to Dashboard
+            </button>
+            <button onClick={() => setShowBadge(true)} className="px-6 py-2.5 bg-green-600 text-white rounded-lg font-bold hover:bg-green-700 transition flex justify-center items-center gap-2 shadow-sm">
+              <Award className="w-5 h-5" /> View 'I Voted' Badge
+            </button>
+          </div>
         </div>
-        <h2 className="text-2xl font-bold text-green-900">Vote Cast Successfully!</h2>
-        <p className="text-green-700 mt-2">Your vote has been securely recorded. You cannot vote again in this election.</p>
-        <button onClick={() => navigate('/')} className="mt-8 px-6 py-2 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 transition">
-          Return to Dashboard
-        </button>
+
+        {showBadge && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60">
+            <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-xl flex flex-col gap-4">
+              <div className="flex justify-between items-center">
+                <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                  <Award className="w-5 h-5 text-blue-600" /> Your Voter Badge
+                </h2>
+                <button onClick={() => setShowBadge(false)} className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              
+              <div className="bg-gray-50 flex justify-center p-6 rounded-xl border border-gray-100">
+                {/* The Badge to Screenshot */}
+                <div 
+                  ref={badgeRef}
+                  className="w-[280px] h-[280px] rounded-full border-8 border-blue-900 flex flex-col items-center justify-center relative shadow-lg overflow-hidden"
+                  style={{
+                    background: 'linear-gradient(135deg, #eff6ff 0%, #bfdbfe 100%)'
+                  }}
+                >
+                  <div className="absolute inset-0 opacity-10">
+                    <AwardsPattern />
+                  </div>
+                  <div className="bg-white p-3 rounded-full shadow-md mb-2 z-10 border-2 border-blue-200">
+                    <CheckCircle2 className="w-8 h-8 text-blue-600" />
+                  </div>
+                  <h3 className="text-3xl font-black text-blue-900 tracking-tight z-10">I VOTED</h3>
+                  <div className="h-1 w-12 bg-blue-500 rounded-full my-2 z-10"></div>
+                  <p className="text-[10px] font-bold text-blue-800 uppercase tracking-widest text-center px-8 z-10">
+                    {election.title}
+                  </p>
+                  <p className="text-[9px] font-medium text-blue-600/80 mt-2 z-10">
+                    {new Date().toLocaleDateString()}
+                  </p>
+                </div>
+              </div>
+
+              <button 
+                onClick={handleDownloadBadge}
+                className="w-full py-3 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 transition flex justify-center items-center gap-2 shadow-sm"
+              >
+                <Download className="w-5 h-5" /> Save Badge
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     );
   }

@@ -3,11 +3,12 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { doc, collection, query, where, onSnapshot, getDoc } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
-import { Trophy, ArrowLeft, AlertCircle } from 'lucide-react';
+import { Trophy, ArrowLeft, AlertCircle, FileBadge, Download, X } from 'lucide-react';
 import { Election, getDerivedElectionStatus } from '../utils/election';
 import { useCurrentTime } from '../hooks/useCurrentTime';
 import confetti from 'canvas-confetti';
 import { motion } from 'motion/react';
+import { toPng } from 'html-to-image';
 
 interface Candidate {
   id: string;
@@ -25,6 +26,26 @@ export default function ResultsPage() {
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [loading, setLoading] = useState(true);
   const hasFiredConfetti = useRef(false);
+
+  const [showCertificate, setShowCertificate] = useState(false);
+  const [certificateData, setCertificateData] = useState<{name: string, position: string, voteCount: number} | null>(null);
+  const certificateRef = useRef<HTMLDivElement>(null);
+
+  const handleDownloadCertificate = async () => {
+    if (!certificateRef.current) return;
+    try {
+      const dataUrl = await toPng(certificateRef.current, { cacheBust: true, pixelRatio: 2 });
+      const link = document.createElement('a');
+      link.href = dataUrl;
+      link.download = `${certificateData?.name.replace(/\s+/g, '_')}_Certificate.png`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (err) {
+      console.error('Failed to generate certificate', err);
+      alert('Failed to generate certificate.');
+    }
+  };
 
   useEffect(() => {
     if (!electionId) return;
@@ -155,9 +176,20 @@ export default function ResultsPage() {
                       <div className="flex items-center gap-3">
                         <p className="text-2xl font-bold text-gray-900">{winner.name}</p>
                         {isCompleted && (
-                          <span className="px-2.5 py-1 text-xs font-bold uppercase tracking-wider text-white bg-yellow-500 rounded-full shadow-sm">
-                            Winner
-                          </span>
+                          <div className="flex gap-2">
+                            <span className="px-2.5 py-1 text-xs font-bold uppercase tracking-wider text-white bg-yellow-500 rounded-full shadow-sm">
+                              Winner
+                            </span>
+                            <button
+                              onClick={() => {
+                                setCertificateData({ name: winner.name, position: position, voteCount: winner.voteCount });
+                                setShowCertificate(true);
+                              }}
+                              className="px-2.5 py-1 flex items-center gap-1 text-xs font-bold uppercase tracking-wider text-yellow-800 bg-yellow-200 hover:bg-yellow-300 rounded-full shadow-sm transition-colors"
+                            >
+                              <FileBadge className="w-3 h-3" /> Certificate
+                            </button>
+                          </div>
                         )}
                       </div>
                       <p className={`font-medium ${isCompleted ? 'text-yellow-800' : 'text-gray-600'}`}>{winner.voteCount} votes ({totalVotes > 0 ? (winner.voteCount / totalVotes * 100).toFixed(1) : 0}%)</p>
@@ -209,6 +241,94 @@ export default function ResultsPage() {
           })}
         </motion.div>
       </div>
+
+      {showCertificate && certificateData && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-3xl shadow-xl flex flex-col gap-4">
+            <div className="flex justify-between items-center">
+              <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+                <FileBadge className="w-5 h-5 text-blue-600" /> Winner Certificate
+              </h2>
+              <button onClick={() => setShowCertificate(false)} className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            
+            <div className="bg-gray-100 p-4 rounded-xl overflow-auto flex justify-center">
+              {/* Certificate Canvas */}
+              <div 
+                ref={certificateRef}
+                className="w-[600px] h-[400px] bg-white border-[10px] border-blue-900 p-8 shadow-sm flex flex-col items-center justify-between text-center relative"
+                style={{
+                  backgroundImage: 'radial-gradient(circle, #ffffff 0%, #f1f5f9 100%)'
+                }}
+              >
+                <div className="absolute top-4 left-4 opacity-10">
+                  <Trophy className="w-24 h-24" />
+                </div>
+                <div className="absolute bottom-4 right-4 opacity-10">
+                  <Trophy className="w-24 h-24" />
+                </div>
+
+                <div>
+                  <h1 className="text-4xl font-serif font-bold text-blue-900 tracking-wider mb-2">CERTIFICATE</h1>
+                  <h3 className="text-xl font-serif text-blue-700 tracking-widest uppercase">Of Election Victory</h3>
+                </div>
+
+                <div className="space-y-4">
+                  <p className="text-base text-gray-600 italic">This is to proudly certify that</p>
+                  <p className="text-3xl font-bold text-gray-900 underline decoration-gray-300 decoration-2 underline-offset-8">
+                    {certificateData.name}
+                  </p>
+                  <p className="text-base text-gray-600 italic mt-4">
+                    has been officially elected as
+                  </p>
+                  <p className="text-2xl font-bold text-blue-800">
+                    {certificateData.position}
+                  </p>
+                  <p className="text-sm font-semibold text-gray-500 mt-2">
+                    with {certificateData.voteCount} confirmed votes in the
+                  </p>
+                  <p className="text-lg font-bold text-gray-800 px-4">
+                    {election.title}
+                  </p>
+                </div>
+
+                <div className="w-full flex justify-between items-end mt-4 px-10">
+                  <div className="text-center w-32 border-t-2 border-gray-400 pt-2">
+                    <p className="text-xs font-bold text-gray-600 uppercase tracking-widest">Date</p>
+                    <p className="text-xs font-medium text-gray-800 mt-1">{new Date().toLocaleDateString()}</p>
+                  </div>
+                  <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center border-2 border-blue-400">
+                    <Trophy className="w-8 h-8 text-blue-600" />
+                  </div>
+                  <div className="text-center w-32 border-t-2 border-gray-400 pt-2">
+                    <p className="text-xs font-bold text-gray-600 uppercase tracking-widest">Election Admin</p>
+                    <p className="text-xs text-transparent italic select-none mt-1">sign</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3 mt-4">
+              <button 
+                onClick={() => setShowCertificate(false)}
+                className="px-4 py-2 border border-gray-200 rounded-lg text-sm font-semibold text-gray-700 hover:bg-gray-50 transition-colors"
+                type="button"
+              >
+                Close
+              </button>
+              <button 
+                onClick={handleDownloadCertificate}
+                className="px-4 py-2 bg-blue-600 rounded-lg text-sm font-semibold text-white hover:bg-blue-700 transition-colors flex items-center gap-2 shadow-sm"
+                type="button"
+              >
+                <Download className="w-4 h-4" /> Download Certificate
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

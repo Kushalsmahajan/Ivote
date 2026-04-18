@@ -248,8 +248,13 @@ export default function Dashboard() {
                   <div>
                     <h3 className="text-lg font-bold text-gray-900 line-clamp-2">{election.title}</h3>
                     {election.type === 'student_association' && (
-                      <span className="inline-flex items-center gap-1 text-[10px] uppercase tracking-wider font-bold text-purple-700 bg-purple-100 px-2 py-0.5 rounded-full mt-1.5">
+                      <span className="inline-flex items-center gap-1 text-[10px] uppercase tracking-wider font-bold text-purple-700 bg-purple-100 px-2 py-0.5 rounded-full mt-1.5 block w-max">
                         👑 Student Association President
+                      </span>
+                    )}
+                    {election.roomId && (
+                      <span className="inline-block mt-2 font-mono text-xs font-semibold bg-gray-100 text-gray-700 px-2 py-0.5 rounded-md border border-gray-200">
+                        Room ID: {election.roomId}
                       </span>
                     )}
                   </div>
