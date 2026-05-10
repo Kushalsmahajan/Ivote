@@ -1,5 +1,15 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { User, signInWithPopup, signOut, onAuthStateChanged } from 'firebase/auth';
+import { 
+  User, 
+  signInWithPopup, 
+  signInWithRedirect, 
+  getRedirectResult, 
+  signOut, 
+  onAuthStateChanged,
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+  updateProfile as updateAuthProfile
+} from 'firebase/auth';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { auth, db, googleProvider, handleFirestoreError, OperationType } from '../firebase';
 
@@ -17,6 +27,8 @@ interface AuthContextType {
   loading: boolean;
   isSigningIn: boolean;
   signInWithGoogle: () => Promise<void>;
+  signInWithEmail: (email: string, password: string) => Promise<void>;
+  signUpWithEmail: (email: string, password: string, name: string) => Promise<void>;
   logout: () => Promise<void>;
   isAdmin: boolean;
   updateProfile: (data: Partial<UserProfile>) => Promise<void>;
@@ -31,6 +43,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isSigningIn, setIsSigningIn] = useState(false);
 
   useEffect(() => {
+    // Check for redirect result on mount (important for mobile APKs)
+    getRedirectResult(auth).catch(error => {
+      console.error('Error getting redirect result', error);
+    });
+
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       setUser(currentUser);
       if (currentUser) {
@@ -41,7 +58,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           if (userDoc.exists()) {
             setProfile(userDoc.data() as UserProfile);
           } else {
-            // Create new student profile by default
+            // Create new student profile by default if it doesn't exist
+            // This handles cases where people sign in with Google for the first time
             const newProfile: UserProfile = {
               email: currentUser.email || '',
               role: 'student',
@@ -66,14 +84,53 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (isSigningIn) return;
     setIsSigningIn(true);
     try {
-      await signInWithPopup(auth, googleProvider);
+      // Use redirect on mobile devices as they often block popups
+      if (/Android|iPhone|iPad/i.test(navigator.userAgent)) {
+        await signInWithRedirect(auth, googleProvider);
+      } else {
+        await signInWithPopup(auth, googleProvider);
+      }
     } catch (error: any) {
       if (error?.code === 'auth/cancelled-popup-request' || error?.code === 'auth/popup-closed-by-user') {
         // User cancelled the popup, ignore gracefully
-        console.log('Popup closed by user');
+        console.log('Popup/Redirect closed or cancelled by user');
       } else {
         console.error('Error signing in with Google', error);
       }
+    } finally {
+      setIsSigningIn(false);
+    }
+  };
+
+  const signInWithEmail = async (email: string, password: string) => {
+    setIsSigningIn(true);
+    try {
+      await signInWithEmailAndPassword(auth, email, password);
+    } catch (error) {
+      console.error('Error signing in with Email', error);
+      throw error;
+    } finally {
+      setIsSigningIn(false);
+    }
+  };
+
+  const signUpWithEmail = async (email: string, password: string, name: string) => {
+    setIsSigningIn(true);
+    try {
+      const result = await createUserWithEmailAndPassword(auth, email, password);
+      await updateAuthProfile(result.user, { displayName: name });
+      
+      const userDocRef = doc(db, 'users', result.user.uid);
+      const newProfile: UserProfile = {
+        email: email,
+        role: 'student',
+        name: name,
+      };
+      await setDoc(userDocRef, newProfile);
+      setProfile(newProfile);
+    } catch (error) {
+      console.error('Error signing up', error);
+      throw error;
     } finally {
       setIsSigningIn(false);
     }
@@ -103,7 +160,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const isAdmin = profile?.role === 'admin' || (user?.email === 'kushalmmahajan@gmail.com' && user?.emailVerified);
 
   return (
-    <AuthContext.Provider value={{ user, profile, loading, isSigningIn, signInWithGoogle, logout, isAdmin, updateProfile }}>
+    <AuthContext.Provider value={{ user, profile, loading, isSigningIn, signInWithGoogle, signInWithEmail, signUpWithEmail, logout, isAdmin, updateProfile }}>
       {!loading && children}
     </AuthContext.Provider>
   );
