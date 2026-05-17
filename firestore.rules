@@ -11,7 +11,8 @@ service cloud.firestore {
 
     function isAdmin() {
       return isAuthenticated() && (
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin') ||
         (request.auth.token.email == "kushalmmahajan@gmail.com" && request.auth.token.email_verified == true)
       );
     }
@@ -26,11 +27,26 @@ service cloud.firestore {
 
     match /users/{userId} {
       allow read: if isOwner(userId) || isAdmin();
-      // Users can create their own profile as 'student'
+      
+      // Validation helper for User entity
+      function isValidUser(data) {
+        return data.email is string && 
+               data.email.size() > 0 &&
+               data.role in ['student', 'admin'] &&
+               (data.keys().hasAll(['name']) ? (data.name is string && data.name.size() <= 100) : true);
+      }
+
       allow create: if isOwner(userId) && 
-                    request.resource.data.keys().hasAll(['email', 'role']) &&
+                    isValidUser(request.resource.data) &&
                     request.resource.data.role == 'student';
-      allow update: if isAdmin();
+      
+      allow update: if isAdmin() || (
+        isOwner(userId) && 
+        isValidUser(request.resource.data) &&
+        request.resource.data.role == resource.data.role && // Cannot change role
+        request.resource.data.email == resource.data.email // Cannot change email
+      );
+      
       allow delete: if isAdmin();
     }
 

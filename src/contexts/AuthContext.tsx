@@ -65,7 +65,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               role: 'student',
               name: currentUser.displayName || 'Student',
             };
-            await setDoc(userDocRef, newProfile);
+            try {
+              await setDoc(userDocRef, newProfile);
+            } catch (error) {
+              handleFirestoreError(error, OperationType.WRITE, `users/${currentUser.uid}`);
+            }
             setProfile(newProfile);
           }
         } catch (error) {
@@ -126,7 +130,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         role: 'student',
         name: name,
       };
-      await setDoc(userDocRef, newProfile);
+      
+      try {
+        await setDoc(userDocRef, newProfile);
+      } catch (error) {
+        handleFirestoreError(error, OperationType.WRITE, `users/${result.user.uid}`);
+      }
+      
       setProfile(newProfile);
     } catch (error) {
       console.error('Error signing up', error);
@@ -150,9 +160,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       const userDocRef = doc(db, 'users', user.uid);
       await setDoc(userDocRef, data, { merge: true });
-      setProfile({ ...profile, ...data });
+      setProfile({ ...profile, ...data as UserProfile });
     } catch (error) {
-      console.error('Error updating profile', error);
+      handleFirestoreError(error, OperationType.WRITE, `users/${user.uid}`);
       throw error;
     }
   };

@@ -3,10 +3,11 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { doc, collection, query, where, onSnapshot, getDoc, writeBatch, increment } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
-import { CheckCircle2, AlertCircle, Award, Download, X, Info, Share2, Check } from 'lucide-react';
+import { CheckCircle2, AlertCircle, Award, Download, X, Info, Share2, Check, User } from 'lucide-react';
 import { Election, getDerivedElectionStatus } from '../utils/election';
 import { useCurrentTime } from '../hooks/useCurrentTime';
 import { toPng } from 'html-to-image';
+import { motion, AnimatePresence } from 'motion/react';
 
 interface Candidate {
   id: string;
@@ -199,6 +200,18 @@ export default function VotingPage() {
     }
   };
 
+  const handleSelectCandidate = (position: string, candidateId: string) => {
+    setSelectedCandidates(prev => {
+      if (prev[position] === candidateId) {
+        // Deselect if already selected
+        const next = { ...prev };
+        delete next[position];
+        return next;
+      }
+      return { ...prev, [position]: candidateId };
+    });
+  };
+
   if (hasVoted === null || !election) {
     return <div className="p-8 text-center text-gray-500">Loading election details...</div>;
   }
@@ -369,61 +382,109 @@ export default function VotingPage() {
 
       {Object.entries(candidatesByPosition).map(([position, posCandidates]) => (
         <div key={position} className="mb-10">
-          <h2 className="text-xl font-bold text-gray-800 mb-4 pb-2 border-b border-gray-200">{position}</h2>
+          <div className="flex items-center justify-between mb-4 pb-2 border-b border-gray-200">
+            <h2 className="text-xl font-bold text-gray-800">{position}</h2>
+            {selectedCandidates[position] ? (
+              <span className="text-sm font-semibold text-blue-600 bg-blue-50 px-3 py-1 rounded-full flex items-center gap-1.5 animate-in fade-in slide-in-from-right-4">
+                <CheckCircle2 className="w-4 h-4" /> Selected
+              </span>
+            ) : (
+              <span className="text-sm font-medium text-gray-400">Select one candidate</span>
+            )}
+          </div>
+          
           <div className="grid gap-6 sm:grid-cols-2">
-            {posCandidates.map((candidate) => (
-              <div
-                key={candidate.id}
-                onClick={() => setSelectedCandidates(prev => ({ ...prev, [position]: candidate.id }))}
-                className={`relative p-6 rounded-2xl border bg-white cursor-pointer transition-all duration-200 flex gap-5 ${
-                  selectedCandidates[position] === candidate.id
-                    ? 'border-blue-600 ring-1 ring-blue-600 shadow-sm'
-                    : 'border-gray-200 hover:border-blue-600'
-                }`}
-              >
-                {selectedCandidates[position] === candidate.id && (
-                  <div className="absolute top-4 right-4 text-blue-600">
-                    <CheckCircle2 className="w-6 h-6" />
+            {posCandidates.map((candidate) => {
+              const isSelected = selectedCandidates[position] === candidate.id;
+              return (
+                <motion.div
+                  key={candidate.id}
+                  layout
+                  onClick={() => handleSelectCandidate(position, candidate.id)}
+                  whileHover={{ scale: 1.01 }}
+                  whileTap={{ scale: 0.98 }}
+                  className={`relative p-6 rounded-2xl border bg-white cursor-pointer transition-all duration-300 flex gap-5 ${
+                    isSelected
+                      ? 'border-blue-600 ring-2 ring-blue-600/20 shadow-lg shadow-blue-100/50'
+                      : 'border-gray-200 hover:border-blue-400 hover:shadow-md'
+                  }`}
+                >
+                  <AnimatePresence>
+                    {isSelected && (
+                      <motion.div 
+                        initial={{ opacity: 0, scale: 0.5, rotate: -20 }}
+                        animate={{ opacity: 1, scale: 1, rotate: 0 }}
+                        exit={{ opacity: 0, scale: 0.5, rotate: 20 }}
+                        className="absolute top-4 right-4 text-blue-600 z-10 bg-white rounded-full"
+                      >
+                        <CheckCircle2 className="w-7 h-7 fill-blue-50 text-blue-600" />
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+
+                  <div className={`w-[100px] h-[100px] rounded-xl bg-gray-100 flex items-center justify-center flex-shrink-0 overflow-hidden border transition-colors duration-300 ${
+                    isSelected ? 'border-blue-200 bg-blue-50' : 'border-gray-200'
+                  }`}>
+                    {candidate.photoUrl ? (
+                      <img src={candidate.photoUrl} alt={candidate.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                    ) : (
+                      <User className={`w-12 h-12 ${isSelected ? 'text-blue-300' : 'text-gray-300'}`} />
+                    )}
                   </div>
-                )}
-                <div className="w-[100px] h-[100px] rounded-xl bg-gray-100 flex items-center justify-center flex-shrink-0 overflow-hidden border border-gray-200">
-                  {candidate.photoUrl ? (
-                    <img src={candidate.photoUrl} alt={candidate.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                  ) : (
-                    <span className="text-3xl font-bold text-gray-400">{candidate.name.charAt(0)}</span>
-                  )}
-                </div>
-                <div className="flex flex-col flex-grow">
-                  <h3 className="font-bold text-lg text-gray-900 mb-1">{candidate.name}</h3>
-                  <p className="text-sm text-gray-500 mb-4">{candidate.position}</p>
-                  
-                  <button
-                    className={`mt-auto w-full py-2.5 rounded-lg text-sm font-semibold transition-colors ${
-                      selectedCandidates[position] === candidate.id
-                        ? 'bg-blue-600 text-white'
-                        : 'bg-gray-50 text-gray-700 border border-gray-200 hover:bg-gray-100'
-                    }`}
-                  >
-                    {selectedCandidates[position] === candidate.id ? 'Selected' : `Vote for ${candidate.name.split(' ')[0]}`}
-                  </button>
-                </div>
-              </div>
-            ))}
+
+                  <div className="flex flex-col flex-grow">
+                    <h3 className={`font-bold text-lg mb-1 transition-colors ${isSelected ? 'text-blue-900' : 'text-gray-900'}`}>
+                      {candidate.name}
+                    </h3>
+                    <p className="text-sm text-gray-500 mb-4">{candidate.position}</p>
+                    
+                    <button
+                      className={`mt-auto w-full py-2.5 rounded-xl text-sm font-bold transition-all duration-300 flex items-center justify-center gap-2 ${
+                        isSelected
+                          ? 'bg-blue-600 text-white shadow-md'
+                          : 'bg-gray-50 text-gray-700 border border-gray-100 hover:bg-blue-50 hover:text-blue-600 hover:border-blue-200'
+                      }`}
+                    >
+                      {isSelected ? (
+                        <>
+                          <Check className="w-4 h-4" />
+                          Selected
+                        </>
+                      ) : (
+                        `Select ${candidate.name.split(' ')[0]}`
+                      )}
+                    </button>
+                  </div>
+                </motion.div>
+              );
+            })}
           </div>
         </div>
       ))}
 
-      <div className="flex justify-end pt-8 border-t border-gray-200 mt-8">
+      <div className="flex flex-col sm:flex-row justify-between items-center pt-8 border-t border-gray-200 mt-8 gap-4">
+        {!allPositionsSelected && (
+          <p className="text-sm font-medium text-orange-600 flex items-center gap-2 bg-orange-50 px-4 py-2 rounded-lg border border-orange-100">
+            <AlertCircle className="w-4 h-4" />
+            Please select a candidate for all {Object.keys(candidatesByPosition).length} positions
+          </p>
+        )}
+        <div className="flex-1" />
         <button
           onClick={handleVote}
           disabled={!allPositionsSelected || isSubmitting}
-          className={`px-8 py-3 rounded-lg font-semibold transition-all ${
+          className={`w-full sm:w-auto px-10 py-3.5 rounded-xl font-bold text-lg transition-all ${
             !allPositionsSelected || isSubmitting
-              ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
-              : 'bg-blue-600 text-white hover:bg-blue-700 shadow-sm'
+              ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+              : 'bg-blue-600 text-white hover:bg-blue-700 shadow-xl shadow-blue-200 hover:-translate-y-0.5 active:translate-y-0'
           }`}
         >
-          {isSubmitting ? 'Submitting...' : 'Confirm Vote'}
+          {isSubmitting ? (
+            <div className="flex items-center gap-2">
+              <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+              Submitting...
+            </div>
+          ) : 'Confirm and Cast Vote'}
         </button>
       </div>
     </div>
