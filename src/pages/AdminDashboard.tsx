@@ -20,6 +20,8 @@ interface Candidate {
   photoUrl: string;
   voteCount: number;
   rollNo?: string;
+  biography?: string;
+  platform?: string;
 }
 
 export default function AdminDashboard() {
@@ -34,7 +36,7 @@ export default function AdminDashboard() {
   const [newElection, setNewElection] = useState<{title: string, startTime: string, endTime: string, passcode: string, type: 'general' | 'student_association'}>({ title: '', startTime: '', endTime: '', passcode: '', type: 'general' });
   
   const [showCandidateForm, setShowCandidateForm] = useState(false);
-  const [newCandidate, setNewCandidate] = useState({ name: '', position: '', photoUrl: '', rollNo: '' });
+  const [newCandidate, setNewCandidate] = useState({ name: '', position: '', photoUrl: '', rollNo: '', biography: '', platform: '' });
   const [editingCandidateId, setEditingCandidateId] = useState<string | null>(null);
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
 
@@ -306,7 +308,9 @@ export default function AdminDashboard() {
           name: newCandidate.name,
           position: newCandidate.position,
           photoUrl: newCandidate.photoUrl,
-          rollNo: newCandidate.rollNo
+          rollNo: newCandidate.rollNo,
+          biography: newCandidate.biography,
+          platform: newCandidate.platform
         });
       } else {
         await addDoc(collection(db, 'candidates'), {
@@ -316,7 +320,7 @@ export default function AdminDashboard() {
         });
       }
       setShowCandidateForm(false);
-      setNewCandidate({ name: '', position: '', photoUrl: '', rollNo: '' });
+      setNewCandidate({ name: '', position: '', photoUrl: '', rollNo: '', biography: '', platform: '' });
       setEditingCandidateId(null);
     } catch (err) {
       handleFirestoreError(err, editingCandidateId ? OperationType.UPDATE : OperationType.CREATE, 'candidates');
@@ -324,7 +328,14 @@ export default function AdminDashboard() {
   };
 
   const handleEditCandidate = (candidate: Candidate) => {
-    setNewCandidate({ name: candidate.name, position: candidate.position, photoUrl: candidate.photoUrl || '', rollNo: candidate.rollNo || '' });
+    setNewCandidate({ 
+      name: candidate.name, 
+      position: candidate.position, 
+      photoUrl: candidate.photoUrl || '', 
+      rollNo: candidate.rollNo || '',
+      biography: candidate.biography || '',
+      platform: candidate.platform || ''
+    });
     setEditingCandidateId(candidate.id);
     setShowCandidateForm(true);
   };
@@ -693,7 +704,7 @@ export default function AdminDashboard() {
                         </button>
                         <button 
                           onClick={() => {
-                            setNewCandidate({ name: '', position: '', photoUrl: '', rollNo: '' });
+                            setNewCandidate({ name: '', position: '', photoUrl: '', rollNo: '', biography: '', platform: '' });
                             setEditingCandidateId(null);
                             setShowCandidateForm(true);
                           }} 
@@ -787,6 +798,27 @@ export default function AdminDashboard() {
                               <div className="h-px bg-gray-200 flex-1"></div>
                             </div>
                             <input type="url" placeholder="Paste image URL here" value={newCandidate.photoUrl} onChange={e => setNewCandidate({...newCandidate, photoUrl: e.target.value})} className="w-full border-gray-200 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm p-2.5 border mt-2" />
+                          </div>
+                          
+                          <div className="col-span-2 space-y-4">
+                            <div>
+                              <label className="block text-xs font-semibold text-gray-700 mb-1.5 uppercase tracking-wider">Biography (Optional)</label>
+                              <textarea
+                                value={newCandidate.biography || ''}
+                                onChange={e => setNewCandidate({...newCandidate, biography: e.target.value})}
+                                placeholder="Brief background about the candidate..."
+                                className="w-full border-gray-200 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm p-2.5 border resize-y min-h-[80px]"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-semibold text-gray-700 mb-1.5 uppercase tracking-wider">Platform & Promises (Optional)</label>
+                              <textarea
+                                value={newCandidate.platform || ''}
+                                onChange={e => setNewCandidate({...newCandidate, platform: e.target.value})}
+                                placeholder="Key initiatives and campaign promises..."
+                                className="w-full border-gray-200 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm p-2.5 border resize-y min-h-[80px]"
+                              />
+                            </div>
                           </div>
                         </div>
                         <div className="flex justify-end gap-3 pt-2">

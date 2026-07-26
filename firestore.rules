@@ -68,11 +68,10 @@ service cloud.firestore {
     }
 
     match /voter_receipts/{receiptId} {
-      allow read: if isAdmin() || (isAuthenticated() && receiptId.matches('^' + request.auth.uid + '_.*'));
+      allow read: if isAuthenticated() && (isAdmin() || receiptId.matches('^' + request.auth.uid + '_.*'));
       allow create: if isAuthenticated() &&
         receiptId == request.auth.uid + '_' + request.resource.data.electionId &&
-        request.resource.data.userId == request.auth.uid &&
-        request.resource.data.keys().hasAll(['electionId', 'userId', 'timestamp']);
+        request.resource.data.userId == request.auth.uid;
       allow update, delete: if false; // Receipts are immutable
     }
   }

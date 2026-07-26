@@ -1,16 +1,19 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { 
   User, 
-  signInWithPopup, 
-  signInWithRedirect, 
-  getRedirectResult, 
+  signInWithPopup,
+  signInWithRedirect,
+  getRedirectResult,
   signOut, 
   onAuthStateChanged,
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
-  updateProfile as updateAuthProfile
+  updateProfile as updateAuthProfile,
+  signInWithCredential,
+  GoogleAuthProvider
 } from 'firebase/auth';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { FirebaseAuthentication } from '@capacitor-firebase/authentication';
 import { auth, db, googleProvider, handleFirestoreError, OperationType } from '../firebase';
 
 interface UserProfile {
@@ -58,6 +61,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           if (userDoc.exists()) {
             setProfile(userDoc.data() as UserProfile);
           } else {
+            // Check if this is a brand new email login
+            // We want to let signUpWithEmail handle the profile creation so name is accurate
+            const isRecent = new Date().getTime() - new Date(currentUser.metadata.creationTime || '').getTime() < 10000;
+            const isEmailLogin = currentUser.providerData.some(p => p.providerId === 'password');
+            if (isEmailLogin && isRecent && !currentUser.displayName) {
+               // Wait for signUpWithEmail to update the auth profile and set the database doc
+               return; 
+            }
+
             // Create new student profile by default if it doesn't exist
             // This handles cases where people sign in with Google for the first time
             const newProfile: UserProfile = {
@@ -67,13 +79,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             };
             try {
               await setDoc(userDocRef, newProfile);
+              setProfile(newProfile);
             } catch (error) {
-              handleFirestoreError(error, OperationType.WRITE, `users/${currentUser.uid}`);
+              console.error('Initial setDoc error', error);
+              // don't throw error here to allow loading to finish
             }
-            setProfile(newProfile);
           }
         } catch (error) {
-          handleFirestoreError(error, OperationType.GET, `users/${currentUser.uid}`);
+          console.error("Error fetching user profile", error);
         }
       } else {
         setProfile(null);
@@ -88,8 +101,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (isSigningIn) return;
     setIsSigningIn(true);
     try {
-      // Use redirect on mobile devices as they often block popups
-      if (/Android|iPhone|iPad/i.test(navigator.userAgent)) {
+      // Google Sign In via Firebase JS SDK does not work reliably in native webviews.
+      if ((window as any).Capacitor && (window as any).Capacitor.isNativePlatform()) {
+        const result = await FirebaseAuthentication.signInWithGoogle();
+        if (result.credential?.idToken) {
+          const credential = GoogleAuthProvider.credential(result.credential.idToken);
+          await signInWithCredential(auth, credential);
+        } else {
+          throw new Error('Google Sign-In failed: No ID token returned.');
+        }
+      } else if (/Android|iPhone|iPad/i.test(navigator.userAgent)) {
         await signInWithRedirect(auth, googleProvider);
       } else {
         await signInWithPopup(auth, googleProvider);
@@ -100,6 +121,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         console.log('Popup/Redirect closed or cancelled by user');
       } else {
         console.error('Error signing in with Google', error);
+        throw error;
       }
     } finally {
       setIsSigningIn(false);

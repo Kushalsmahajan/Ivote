@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { doc, collection, query, where, onSnapshot, getDoc, writeBatch, increment } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
-import { CheckCircle2, AlertCircle, Award, Download, X, Info, Share2, Check, User } from 'lucide-react';
+import { CheckCircle2, AlertCircle, Award, Download, X, Info, Share2, Check, User, ChevronDown, ChevronUp } from 'lucide-react';
 import { Election, getDerivedElectionStatus } from '../utils/election';
 import { useCurrentTime } from '../hooks/useCurrentTime';
 import { toPng } from 'html-to-image';
@@ -14,6 +14,8 @@ interface Candidate {
   name: string;
   position: string;
   photoUrl?: string;
+  biography?: string;
+  platform?: string;
 }
 
 const AwardsPattern = () => (
@@ -37,8 +39,15 @@ export default function VotingPage() {
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [hasVoted, setHasVoted] = useState<boolean | null>(null);
   const [selectedCandidates, setSelectedCandidates] = useState<Record<string, string>>({});
+  const [expandedCandidates, setExpandedCandidates] = useState<Record<string, boolean>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const toggleCandidateExpand = (candidateId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setExpandedCandidates(prev => ({ ...prev, [candidateId]: !prev[candidateId] }));
+  };
+
   
   // Passcode state
   const [enteredPasscode, setEnteredPasscode] = useState('');
@@ -433,11 +442,48 @@ export default function VotingPage() {
                   </div>
 
                   <div className="flex flex-col flex-grow">
-                    <h3 className={`font-bold text-lg mb-1 transition-colors ${isSelected ? 'text-blue-900' : 'text-gray-900'}`}>
-                      {candidate.name}
-                    </h3>
+                    <div className="flex justify-between items-start mb-1">
+                      <h3 className={`font-bold text-lg transition-colors ${isSelected ? 'text-blue-900' : 'text-gray-900'}`}>
+                        {candidate.name}
+                      </h3>
+                      {(candidate.biography || candidate.platform) && (
+                        <button
+                          onClick={(e) => toggleCandidateExpand(candidate.id, e)}
+                          className="p-1 rounded-full text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
+                          title={expandedCandidates[candidate.id] ? "Show less" : "Show more"}
+                        >
+                          {expandedCandidates[candidate.id] ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
+                        </button>
+                      )}
+                    </div>
                     <p className="text-sm text-gray-500 mb-4">{candidate.position}</p>
                     
+                    <AnimatePresence>
+                      {expandedCandidates[candidate.id] && (candidate.biography || candidate.platform) && (
+                        <motion.div
+                          initial={{ opacity: 0, height: 0 }}
+                          animate={{ opacity: 1, height: "auto" }}
+                          exit={{ opacity: 0, height: 0 }}
+                          className="overflow-hidden mb-4"
+                        >
+                          <div className="text-sm text-gray-600 space-y-3 p-3 bg-gray-50 rounded-lg border border-gray-100">
+                            {candidate.biography && (
+                              <div>
+                                <h4 className="font-semibold text-gray-800 mb-1 text-xs uppercase tracking-wider">Biography</h4>
+                                <p>{candidate.biography}</p>
+                              </div>
+                            )}
+                            {candidate.platform && (
+                              <div>
+                                <h4 className="font-semibold text-gray-800 mb-1 text-xs uppercase tracking-wider">Platform</h4>
+                                <p>{candidate.platform}</p>
+                              </div>
+                            )}
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+
                     <button
                       className={`mt-auto w-full py-2.5 rounded-xl text-sm font-bold transition-all duration-300 flex items-center justify-center gap-2 ${
                         isSelected

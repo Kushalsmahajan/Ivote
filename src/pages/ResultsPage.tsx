@@ -15,6 +15,8 @@ interface Candidate {
   name: string;
   position: string;
   voteCount: number;
+  biography?: string;
+  platform?: string;
 }
 
 export default function ResultsPage() {

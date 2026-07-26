@@ -2,11 +2,14 @@ import { useAuth } from '../contexts/AuthContext';
 import { Navigate } from 'react-router-dom';
 import { Vote, Shield, GraduationCap, Mail, Lock, User as UserIcon, ArrowRight } from 'lucide-react';
 import { useState } from 'react';
+import { Capacitor } from '@capacitor/core';
 
 export default function Login() {
   const { user, isAdmin, signInWithGoogle, signInWithEmail, signUpWithEmail, isSigningIn } = useAuth();
+  const isNative = Capacitor.isNativePlatform();
+  
   const [loginType, setLoginType] = useState<'student' | 'admin'>('student');
-  const [authMethod, setAuthMethod] = useState<'google' | 'email'>('google');
+  const [authMethod, setAuthMethod] = useState<'google' | 'email'>(isNative ? 'email' : 'google');
   const [isSignUp, setIsSignUp] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -19,6 +22,19 @@ export default function Login() {
     }
     return <Navigate to="/" />;
   }
+
+  const handleGoogleSignIn = async () => {
+    setError('');
+    try {
+      await signInWithGoogle();
+    } catch (err: any) {
+      if (err.code === 'auth/network-request-failed') {
+        setError('Google Sign-In failed due to network or browser restrictions. If you are using an ad-blocker, strict privacy mode, or testing in a third-party iframe (like Safari), please try opening the app in a new tab or use Email/Password sign-in.');
+      } else {
+        setError(err.message || 'Error signing in with Google.');
+      }
+    }
+  };
 
   const handleEmailAuth = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -42,9 +58,15 @@ export default function Login() {
       } else if (err.code === 'auth/weak-password') {
         setError('Password should be at least 6 characters.');
       } else if (err.code === 'auth/operation-not-allowed') {
-        setError('Email/Password sign-in is not enabled in the Firebase Console. Please enable it in Authentication > Sign-in method.');
+        setError('Firebase Login Problem: Email/Password sign-in is not enabled in your Firebase Console. Please go to Authentication > Sign-in method and enable it.');
       } else {
-        setError(err.message || 'Authentication failed. Please try again.');
+        try {
+          const parsed = JSON.parse(err.message);
+          if (parsed.error) setError(parsed.error);
+          else setError(err.message);
+        } catch {
+          setError(err.message || 'Authentication failed. Please try again.');
+        }
       }
     }
   };
@@ -77,7 +99,7 @@ export default function Login() {
           <button
             onClick={() => {
               setLoginType('admin');
-              setAuthMethod('email'); // Admins usually prefer/need email for first setup if not using specific gmail
+              setAuthMethod('email');
               setIsSignUp(false);
             }}
             className={`flex-1 flex items-center justify-center gap-2 py-2 text-sm font-semibold rounded-md transition-all ${loginType === 'admin' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
@@ -96,7 +118,7 @@ export default function Login() {
           {authMethod === 'google' ? (
             <div className="space-y-4">
               <button
-                onClick={signInWithGoogle}
+                onClick={handleGoogleSignIn}
                 disabled={isSigningIn}
                 className="w-full h-[54px] flex items-center justify-center gap-3 px-4 border border-gray-200 rounded-xl bg-white text-base font-semibold text-gray-700 hover:bg-gray-50 hover:border-gray-300 transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed group"
               >
@@ -198,16 +220,18 @@ export default function Login() {
                 >
                   {isSignUp ? 'Already have an account? Sign in' : 'Don\'t have an account? Sign up'}
                 </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setAuthMethod('google');
-                    setIsSignUp(false);
-                  }}
-                  className="text-sm text-blue-600 hover:text-blue-700 font-bold underline underline-offset-4"
-                >
-                  Return to Google Sign In
-                </button>
+                {!isNative && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAuthMethod('google');
+                      setIsSignUp(false);
+                    }}
+                    className="text-sm text-blue-600 hover:text-blue-700 font-bold underline underline-offset-4"
+                  >
+                    Return to Google Sign In
+                  </button>
+                )}
               </div>
             </form>
           )}
