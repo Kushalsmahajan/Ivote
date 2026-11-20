@@ -28,10 +28,16 @@ export default function Login() {
     try {
       await signInWithGoogle();
     } catch (err: any) {
-      if (err.code === 'auth/network-request-failed') {
+      if (err?.code === 'auth/popup-blocked') {
+        setError('Your browser blocked the Google Sign-In popup. Please allow popups for this site and try again, or use Email and Password below.');
+      } else if (err?.code === 'auth/unauthorized-domain') {
+        setError('This domain is not authorized for Google Sign-In in Firebase Authentication. Please add this domain under Authentication > Settings > Authorized domains, or use Email and Password below.');
+      } else if (err?.code === 'auth/operation-not-allowed') {
+        setError('Google Sign-In is currently disabled in Firebase Authentication. Please enable the Google provider in the Firebase Console or use Email and Password below.');
+      } else if (err?.code === 'auth/network-request-failed') {
         setError('Google Sign-In failed due to network or browser restrictions. If you are using an ad-blocker, strict privacy mode, or testing in a third-party iframe (like Safari), please try opening the app in a new tab or use Email/Password sign-in.');
       } else {
-        setError(err.message || 'Error signing in with Google.');
+        setError(err?.message || 'Error signing in with Google.');
       }
     }
   };

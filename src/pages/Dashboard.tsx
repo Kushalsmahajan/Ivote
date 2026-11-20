@@ -1,18 +1,41 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { collection, query, onSnapshot, orderBy } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { Link, useNavigate } from 'react-router-dom';
 import { format } from 'date-fns';
-import { Calendar, ChevronRight, BarChart2, User as UserIcon, Edit2, Check, X, Share2 } from 'lucide-react';
+import { Calendar, ChevronRight, BarChart2, Edit2, Check, X, Share2, Clock, Radio, Lock } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { Election, getDerivedElectionStatus } from '../utils/election';
 import { useCurrentTime } from '../hooks/useCurrentTime';
+import ElectionCountdown from '../components/ElectionCountdown';
+
+const STATUS_BADGE_CONFIG = {
+  upcoming: {
+    label: 'Upcoming',
+    className: 'bg-amber-50 text-amber-800 border border-amber-200',
+    Icon: Clock,
+  },
+  active: {
+    label: 'Live',
+    className: 'bg-emerald-50 text-emerald-700 border border-emerald-200',
+    Icon: Radio,
+  },
+  completed: {
+    label: 'Closed',
+    className: 'bg-slate-100 text-slate-700 border border-slate-200',
+    Icon: Lock,
+  },
+} as const;
 
 export default function Dashboard() {
   const [elections, setElections] = useState<Election[]>([]);
   const [loading, setLoading] = useState(true);
   const { user, profile, updateProfile } = useAuth();
   const currentTime = useCurrentTime(10000); // Re-render every 10s
+  const [, setStatusTick] = useState(0);
+  const handleElectionExpire = useCallback(() => {
+    setStatusTick(t => t + 1);
+  }, []);
 
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [editProfileData, setEditProfileData] = useState({
@@ -104,9 +127,10 @@ export default function Dashboard() {
     return <div className="animate-pulse flex space-x-4">Loading elections...</div>;
   }
 
+  const effectiveNow = Math.max(currentTime, Date.now());
   const electionsWithStatus = elections.map(e => ({
     ...e,
-    derivedStatus: getDerivedElectionStatus(e)
+    derivedStatus: getDerivedElectionStatus(e, effectiveNow)
   }));
 
   return (
@@ -197,12 +221,19 @@ export default function Dashboard() {
           <h3 className="text-xs uppercase tracking-widest text-gray-500 font-semibold mb-3">Active Election</h3>
           {electionsWithStatus.filter(e => e.derivedStatus === 'active').length > 0 ? (
             electionsWithStatus.filter(e => e.derivedStatus === 'active').map(election => (
-              <div key={election.id} className="bg-gray-50 border border-gray-200 rounded-xl p-4 mb-3">
-                <div className="font-semibold text-gray-900 mb-2">{election.title}</div>
-                <div className="inline-flex items-center gap-1.5 text-xs font-semibold text-green-600 mt-2">
-                  <div className="w-2 h-2 bg-green-600 rounded-full"></div>
-                  Live Now
+              <div key={election.id} className="bg-gray-50 border border-gray-200 rounded-xl p-4 mb-3 space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="font-semibold text-gray-900 truncate">{election.title}</div>
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 whitespace-nowrap shrink-0">
+                    <Radio className="w-3 h-3" />
+                    Live
+                  </span>
                 </div>
+                <ElectionCountdown
+                  endTime={election.endTime}
+                  variant="compact"
+                  onExpire={handleElectionExpire}
+                />
               </div>
             ))
           ) : (
@@ -260,40 +291,54 @@ export default function Dashboard() {
           </div>
         ) : (
           <div className="grid gap-6 lg:grid-cols-2">
-            {electionsWithStatus.map((election) => (
+            {electionsWithStatus.map((election) => {
+              const statusMeta = STATUS_BADGE_CONFIG[election.derivedStatus];
+              const StatusIcon = statusMeta.Icon;
+
+              return (
               <div key={election.id} className="bg-white rounded-2xl border border-gray-200 p-6 hover:border-blue-600 transition-colors flex flex-col">
-                <div className="flex justify-between items-start mb-4">
-                  <div>
+                <div className="flex justify-between items-start gap-3 mb-4">
+                  <div className="min-w-0">
                     <h3 className="text-lg font-bold text-gray-900 line-clamp-2">{election.title}</h3>
                     {election.type === 'student_association' && (
-                      <span className="inline-flex items-center gap-1 text-[10px] uppercase tracking-wider font-bold text-purple-700 bg-purple-100 px-2 py-0.5 rounded-full mt-1.5 block w-max">
-                        👑 Student Association President
-                      </span>
+                      <div className="text-xs font-semibold text-purple-700 mt-1">
+                        Student Association President
+                      </div>
                     )}
                     {election.roomId && (
-                      <span className="inline-block mt-2 font-mono text-xs font-semibold bg-gray-100 text-gray-700 px-2 py-0.5 rounded-md border border-gray-200">
+                      <div className="mt-1.5 font-mono text-xs font-semibold text-gray-600">
                         Room ID: {election.roomId}
-                      </span>
+                      </div>
                     )}
                   </div>
-                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold capitalize
-                    ${election.derivedStatus === 'active' ? 'bg-green-100 text-green-800' : 
-                      election.derivedStatus === 'upcoming' ? 'bg-blue-100 text-blue-800' : 
-                      'bg-gray-100 text-gray-800'}`}>
-                    {election.derivedStatus}
+                  <span
+                    className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold whitespace-nowrap shrink-0 ${statusMeta.className}`}
+                  >
+                    <StatusIcon className="w-3.5 h-3.5 shrink-0" />
+                    {statusMeta.label}
                   </span>
                 </div>
                 
-                <div className="space-y-2 text-sm text-gray-500 mb-6 flex-grow">
+                <div className="space-y-2 text-sm text-gray-500 mb-5 flex-grow">
                   <div className="flex items-center gap-2">
-                    <Calendar className="w-4 h-4" />
+                    <Calendar className="w-4 h-4 shrink-0" />
                     <span>Starts: {format(new Date(election.startTime), 'MMM d, yyyy h:mm a')}</span>
                   </div>
                   <div className="flex items-center gap-2">
-                    <Calendar className="w-4 h-4" />
+                    <Calendar className="w-4 h-4 shrink-0" />
                     <span>Ends: {format(new Date(election.endTime), 'MMM d, yyyy h:mm a')}</span>
                   </div>
                 </div>
+
+                {election.derivedStatus === 'active' && (
+                  <div className="mb-4">
+                    <ElectionCountdown
+                      endTime={election.endTime}
+                      variant="card"
+                      onExpire={handleElectionExpire}
+                    />
+                  </div>
+                )}
 
                 <div className="pt-4 border-t border-gray-100 flex gap-3 mt-auto">
                   {election.derivedStatus === 'active' && (
@@ -329,7 +374,8 @@ export default function Dashboard() {
                   </button>
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </section>

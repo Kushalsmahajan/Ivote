@@ -2,8 +2,6 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import { 
   User, 
   signInWithPopup,
-  signInWithRedirect,
-  getRedirectResult,
   signOut, 
   onAuthStateChanged,
   createUserWithEmailAndPassword,
@@ -46,11 +44,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isSigningIn, setIsSigningIn] = useState(false);
 
   useEffect(() => {
-    // Check for redirect result on mount (important for mobile APKs)
-    getRedirectResult(auth).catch(error => {
-      console.error('Error getting redirect result', error);
-    });
-
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       setUser(currentUser);
       if (currentUser) {
@@ -110,8 +103,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         } else {
           throw new Error('Google Sign-In failed: No ID token returned.');
         }
-      } else if (/Android|iPhone|iPad/i.test(navigator.userAgent)) {
-        await signInWithRedirect(auth, googleProvider);
       } else {
         await signInWithPopup(auth, googleProvider);
       }

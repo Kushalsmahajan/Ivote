@@ -10,14 +10,18 @@ export interface Election {
   roomId?: string;
 }
 
-export const getDerivedElectionStatus = (election: Election): 'upcoming' | 'active' | 'completed' => {
+export const getDerivedElectionStatus = (
+  election: Election,
+  nowMs: number = Date.now()
+): 'upcoming' | 'active' | 'completed' => {
   if (!election.startTime || !election.endTime) return election.status;
-  
-  const now = new Date().getTime();
+
   const start = new Date(election.startTime).getTime();
   const end = new Date(election.endTime).getTime();
-  
-  if (now < start) return 'upcoming';
-  if (now >= start && now <= end) return 'active';
+
+  if (Number.isNaN(start) || Number.isNaN(end)) return election.status;
+
+  if (nowMs < start) return 'upcoming';
+  if (nowMs >= start && nowMs <= end) return 'active';
   return 'completed';
 };
